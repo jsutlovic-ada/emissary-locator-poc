@@ -9,7 +9,7 @@ spec:
   prefix: /echo/
   headers:
     x-cell-choice: A
-  service: http://echoserver-a.emissary
+  service: http://echoserver-a.cells
 ---
 apiVersion: getambassador.io/v3alpha1
 kind: Mapping
@@ -21,7 +21,7 @@ spec:
   prefix: /echo/
   headers:
     x-cell-choice: B
-  service: http://echoserver-b.emissary
+  service: http://echoserver-b.cells
 ---
 apiVersion: getambassador.io/v3alpha1
 kind: Mapping
@@ -34,5 +34,5 @@ spec:
   add_request_headers:
     x-cell-choice:
       value: "DEFAULT"
-  service: http://echoserver-a.emissary
+  service: http://echoserver-a.cells
 

@@ -26,7 +26,7 @@ Each cell has a header value associated with it for emissary to match. Since map
 ### Minikube setup
 
 **Note:** Using the hyperkit driver may not be necessary, but the working setup was tested this way
-```
+```sh
 minikube start --namespace=emissary --vm-driver=hyperkit
 ```
 
@@ -34,7 +34,7 @@ minikube start --namespace=emissary --vm-driver=hyperkit
 
 **Note:** Follow step 1 here: https://www.getambassador.io/docs/emissary/latest/tutorials/getting-started/#1-installation
 This is a copy of those steps at time of writing
-```
+```sh
 kubectl create namespace emissary && \
 kubectl apply -f https://app.getambassador.io/yaml/emissary/3.1.0/emissary-crds.yaml
 kubectl wait --timeout=90s --for=condition=available deployment emissary-apiext -n emissary-system
@@ -47,13 +47,14 @@ kubectl -n emissary wait --for condition=available --timeout=90s deploy -lapp.ku
 This builds the image so its available to the minikube cluster
 **Note:** If you need to update the code while it is already deployed, use version tags
 
-```
+```sh
 eval $(minikube docker-env)
 docker build . -t local-auth-service:latest
 ```
 
 ### Deploy services and configuration
-```
+```sh
+kubectl create namespace cells
 kubectl apply -f listener-http.yaml
 kubectl apply -f example-echo-server.yaml
 kubectl apply -f example-auth-service.yaml
@@ -63,8 +64,8 @@ kubectl apply -f echo-mappings.yaml
 
 ### Make some requests
 
-Using **`http`**:
-```
+Using **`httpie`**:
+```sh
 export ECHO_URL="$(minikube service emissary-ingress -n emissary --url | head -n1)"
 http -vv "$ECHO_URL/echo/" 'Host: bar.ada.support'
 http -vv "$ECHO_URL/echo/" 'Host: foo.ada.support'
@@ -72,7 +73,7 @@ http -vv "$ECHO_URL/echo/" 'Host: asdf.ada.support'
 ```
 
 Using **`curl`**:
-```
+```sh
 export ECHO_URL="$(minikube service emissary-ingress -n emissary --url | head -n1)"
 curl -i "$ECHO_URL/echo/" -H 'Host: bar.ada.support'
 curl -i "$ECHO_URL/echo/" -H 'Host: foo.ada.support'
