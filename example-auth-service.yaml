@@ -12,7 +12,7 @@ spec:
     name: http-example-auth
     targetPort: http-api
 ---
-apiVersion: extensions/v1beta1
+apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: example-auth
@@ -20,6 +20,9 @@ spec:
   replicas: 1
   strategy:
     type: RollingUpdate
+  selector:
+    matchLabels:
+      app: example-auth
   template:
     metadata:
       labels:
@@ -27,8 +30,8 @@ spec:
     spec:
       containers:
       - name: example-auth
-        image: datawire/ambassador-auth-service:1.1.1
-        imagePullPolicy: Always
+        image: local-auth-service:latest
+        imagePullPolicy: Never
         ports:
         - name: http-api
           containerPort: 3000
@@ -36,3 +39,4 @@ spec:
           limits:
             cpu: "0.1"
             memory: 100Mi
+

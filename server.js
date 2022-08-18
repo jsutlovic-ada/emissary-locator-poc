@@ -26,39 +26,37 @@ const express = require('express')
 const app = express()
 const addRequestId = require('express-request-id')()
 
-// Set up authentication middleware
-const basicAuth = require('express-basic-auth')
-const authenticate = basicAuth({
-  'users': { 'username': 'password' },
-  'challenge': true,
-  'realm': 'Ambassador Realm'
-})
-
 // Always have a request ID.
 app.use(addRequestId)
 
 // Add verbose logging of requests (see below)
 app.use(logRequests)
 
-// Get authentication path from env, default to /extauth/backend/get-quote
-var authPath = '/extauth/backend/get-quote'
-if ('AUTH_PATH' in process.env) {
-  authPath = process.env.AUTH_PATH
-}
-console.log(`setting authenticated path to: ${authPath}`)
+// Forward to a cell based on hostname
+app.all('/extauth/*', function(req, res) {
+  const host = req.headers['host']
 
-// Require authentication for authPath requests
-app.all(authPath.concat('*'), authenticate, function (req, res) {
-  var session = req.headers['x-qotm-session']
-
-  if (!session) {
-    console.log(`creating x-qotm-session: ${req.id}`)
-    session = req.id
-    res.set('x-qotm-session', session)
+  if (!host || host.startsWith("none")) {
+    console.log('  No host header')
+    res.status(404).send("Host not found")
+    return
   }
 
-  console.log(`allowing QotM request, session ${session}`)
-  res.send('OK (authenticated)')
+  console.log(`  Test request headers for ${host}`)
+  if (host.startsWith("foo")) {
+    console.log(`  Got "foo" host, forwarding to B cell`)
+    res.set('x-cell-choice', 'B')
+    res.send(`OK (cell B)`)
+    return
+  } else if (host.startsWith("bar")) {
+    console.log(`  Got "bar" host, forwarding to A cell`)
+    res.set('x-cell-choice', 'A')
+    res.send(`OK (cell A)`)
+    return
+  }
+
+  console.log(`  No cell match, forwarding to default`)
+  res.send(`OK (default)`)
 })
 
 // Everything else is okay without auth
@@ -79,30 +77,5 @@ function logRequests (req, res, next) {
   Object.entries(req.headers).forEach(
     ([key, value]) => console.log(`    ${key}: ${value}`)
   )
-
-  // Check for expected authorization header
-  const auth = req.headers['authorization']
-  if (!auth) {
-    console.log('  No authorization header')
-    return next()
-  }
-  if (!auth.toLowerCase().startsWith('basic ')) {
-    console.log('  Not Basic Auth')
-    return next()
-  }
-
-  // Parse authorization header
-  const userpass = Buffer.from(auth.slice(6), 'base64').toString()
-  console.log(`  Auth decodes to "${userpass}"`)
-  const splitIdx = userpass.search(':')
-  if (splitIdx < 1) {  // No colon or empty username
-    console.log('  Bad authorization format')
-    return next()
-  }
-
-  // Extract username and password pair
-  const username = userpass.slice(0, splitIdx)
-  const password = userpass.slice(splitIdx + 1)
-  console.log(`  Auth user="${username}" pass="${password}"`)
   return next()
 }

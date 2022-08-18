@@ -1,74 +1,82 @@
-# Ambassador Auth Service
+# Emissary Auth Routing Example
 
-Example auth service for [Ambassador][ag] using [ExtAuth][ae]. See the [Ambassador documentation][aw] for more information.
+## Setup
 
-[ag]: https://github.com/datawire/ambassador
-[ae]: https://github.com/datawire/ambassador-envoy
-[aw]: http://www.getambassador.io/
+This proof of concept sets up two echo servers (as k8s services) that are reverse-proxied by emissary. A nodejs-based locator service is configured to forward requests to those services based on the hostname being requested.
 
+## Using the auth service
 
-## Using the service
+The auth service listens on port 3000 and supports the ExtAuth interaction pattern. In short, the service expects a POST to the path `/extauth/*` with client request headers as a JSON map in the POST body.
 
-The service listens on port 3000 and supports the ExtAuth interaction pattern. In short, the service expects a POST to the path `/ambassador/auth` with client request headers as a JSON map in the POST body. If auth is okay, it returns a 200 to allow the client request to go through. Otherwise it returns a 401 with an HTTP Basic Auth WWW-Authenticate header. Take a look at [ExtAuth][ae] for more information about the Envoy side of things.
+The code will check the `Host` header for a pattern and return a redirection header `x-cell-choice` with a value. Currently the host to redirect mapping is hardcoded as such:
+`bar.*` -> `x-cell-choice: A`
+`foo.*` -> `x-cell-choice: B`
+`none.*` -> HTTP 404 (auth 404 and message gets returned to the user)
+Other hostnames will be accepted by the auth service and allowed to forward through emissary normally.
+This should be fairly easy to extend to any number of cells.
 
-By default, this code only performs auth when the client headers indicate a request under the `/extauth/backend/get-quote` path. This path can be tweaked via the `AUTH_PATH` environment variable. The only valid credentials are `username:password`. It should be straightforward to extend this sample to perform meaningful auth.
+#### Emissary Mappings
 
-
-### Run using Node
-
-The example service requires a recent version of Node that supports `const`.
-
-    $ git clone https://github.com/datawire/ambassador-auth-service.git
-    Cloning into 'ambassador-auth-service'...
-    remote: Counting objects: 36, done.
-    remote: Compressing objects: 100% (23/23), done.
-    remote: Total 36 (delta 14), reused 29 (delta 11), pack-reused 0
-    Unpacking objects: 100% (36/36), done.
-
-    $ cd ambassador-auth-service/
-
-    $ npm install
-    added 236 packages in 4.995s
-
-    $ npm start
-
-    > authserver@1.0.0 start /Users/ark3/temp/ambassador-auth-service
-    > node server.js
-
-    Example app listening on port 3000!
+There are 3 mappings used: two mapping blocks for each of the "cells" (echo server backends), and a default fallback which is necessary for the header redirection to work.
+Each cell has a header value associated with it for emissary to match. Since mapping evaluation/matching is done after authentication, we can use emissary's header matching to forward to a cell based on a header copied over from the auth service. The caveat is that all requests coming in must match a valid mapping *on entry* for emissary to process the reqeust, which is what the default mapping is for. The default mapping does not have to route to anything particular, the configuration in this POC is to provide visibility into which mapping is being used.
 
 
-### Run using Docker
+## Running the full system
 
-    $ docker pull datawire/ambassador-auth-service:latest
-    latest: Pulling from datawire/ambassador-auth-service
-    2aecc7e1714b: Pull complete
-    8c9904a62f4c: Pull complete
-    03e43cd0c4c3: Pull complete
-    ea2ca032df77: Pull complete
-    cf5c747aca5b: Pull complete
-    Digest: sha256:78c46829e124be43a6976fea53a6e120f6c9ce24ef68782bdedf55d7acd4b9c5
-    Status: Downloaded newer image for datawire/ambassador-auth-service:latest
+### Minikube setup
 
-    $ docker run -it --rm -p 3000:3000 datawire/ambassador-auth-service:latest
+**Note:** Using the hyperkit driver may not be necessary, but the working setup was tested this way
+```
+minikube start --namespace=emissary --vm-driver=hyperkit
+```
 
-    > authserver@1.0.0 start /src
-    > node server.js
+### Get Emissary installed
 
-    Example app listening on port 3000!
+**Note:** Follow step 1 here: https://www.getambassador.io/docs/emissary/latest/tutorials/getting-started/#1-installation
+This is a copy of those steps at time of writing
+```
+kubectl create namespace emissary && \
+kubectl apply -f https://app.getambassador.io/yaml/emissary/3.1.0/emissary-crds.yaml
+kubectl wait --timeout=90s --for=condition=available deployment emissary-apiext -n emissary-system
 
+helm install emissary-ingress --namespace emissary datawire/emissary-ingress && \
+kubectl -n emissary wait --for condition=available --timeout=90s deploy -lapp.kubernetes.io/instance=emissary-ingress
+```
 
-### Run using Kubernetes
+### Build the auth service
+This builds the image so its available to the minikube cluster
+**Note:** If you need to update the code while it is already deployed, use version tags
 
-This assumes your `kubectl` command is set up to point to your Kubernetes cluster already.
+```
+eval $(minikube docker-env)
+docker build . -t local-auth-service:latest
+```
 
-    $ kubectl apply -f example-auth.yaml
-    service "example-auth" created
-    deployment "example-auth" created
+### Deploy services and configuration
+```
+kubectl apply -f listener-http.yaml
+kubectl apply -f example-echo-server.yaml
+kubectl apply -f example-auth-service.yaml
+kubectl apply -f example-auth-service-config.yaml
+kubectl apply -f echo-mappings.yaml
+```
 
-    $ kubectl logs example-auth-2014484287-034kz
+### Make some requests
 
-    > authserver@1.0.0 start /src
-    > node server.js
+Using **`http`**:
+```
+export ECHO_URL="$(minikube service emissary-ingress -n emissary --url | head -n1)"
+http -vv "$ECHO_URL/echo/" 'Host: bar.ada.support'
+http -vv "$ECHO_URL/echo/" 'Host: foo.ada.support'
+http -vv "$ECHO_URL/echo/" 'Host: asdf.ada.support'
+```
 
-    Example app listening on port 3000!
+Using **`curl`**:
+```
+export ECHO_URL="$(minikube service emissary-ingress -n emissary --url | head -n1)"
+curl -i "$ECHO_URL/echo/" -H 'Host: bar.ada.support'
+curl -i "$ECHO_URL/echo/" -H 'Host: foo.ada.support'
+curl -i "$ECHO_URL/echo/" -H 'Host: asdf.ada.support'
+```
+
+Look for `header.x-cell-choice` and `os.hostname` in the output JSON to validate the forwarding config.

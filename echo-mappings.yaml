@@ -1,0 +1,38 @@
+---
+apiVersion: getambassador.io/v3alpha1
+kind: Mapping
+metadata:
+  name: echoserver
+  namespace: emissary
+spec:
+  hostname: "*"
+  prefix: /echo/
+  headers:
+    x-cell-choice: A
+  service: http://echoserver-a.emissary
+---
+apiVersion: getambassador.io/v3alpha1
+kind: Mapping
+metadata:
+  name: echoserver-b
+  namespace: emissary
+spec:
+  hostname: "*"
+  prefix: /echo/
+  headers:
+    x-cell-choice: B
+  service: http://echoserver-b.emissary
+---
+apiVersion: getambassador.io/v3alpha1
+kind: Mapping
+metadata:
+  name: echoserver-default
+  namespace: emissary
+spec:
+  hostname: "*"
+  prefix: /echo/
+  add_request_headers:
+    x-cell-choice:
+      value: "DEFAULT"
+  service: http://echoserver-a.emissary
+
